@@ -6,6 +6,12 @@ use reqwest::{header, Client, Response, Url};
 use anyhow::Result;
 use colored::Colorize;
 use mime::Mime;
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Style, ThemeSet},
+    parsing::SyntaxSet,
+    util::{as_24_bit_terminal_escaped, as_latex_escaped, LinesWithEndings},
+};
 // 定义 HTTPie 的 CLI 的主入口，它包含若干个子命令
 // 下面 /// 的注释是文档，clap 会将其作为 CLI 的帮助
 
@@ -121,12 +127,12 @@ fn print_headers(resp: &Response) {
 
 /// 打印服务器返回的 HTTP body
 /// 显示为蓝绿色
-fn print_body(m: Option<Mime>, body: &String) {
+fn print_body(m: Option<Mime>, body: &str) {
     match m {
         // 对于 "application/json" 我们 pretty print
-        Some(v) if v == mime::APPLICATION_JSON => {
-            println!("{}", jsonxf::pretty_print(body).unwrap().cyan())
-        }
+        Some(v) if v == mime::APPLICATION_JSON => print_syntect(body, "json"),
+        Some(v) if v == mime::TEXT_HTML => print_syntect(body, "html"),
+
         // 其它 mime type，我们就直接输出
         _ => println!("{}", body),
     }
@@ -167,6 +173,22 @@ async fn main() -> Result<()> {
         SubCommand::Post(ref args) => post(client, args).await?,
     };
    Ok(result)
+}
+
+///使用syntect库对body进行高亮处理
+///针对json以及html
+fn print_syntect(s: &str, ext: &str) {
+    // Load these once at the start of your program
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+    let syntax = ps.find_syntax_by_extension(ext).unwrap();
+    let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
+    for line in LinesWithEndings::from(s) {
+        let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+        // let escaped = as_latex_escaped(&ranges[..]);
+        let escaped:String = as_24_bit_terminal_escaped(&ranges[..], true);
+        print!("{}", escaped);
+    }
 }
 
 // 仅在 cargo test 时才编译
